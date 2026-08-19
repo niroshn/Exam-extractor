@@ -19,7 +19,7 @@ class ExtractionService:
         Returns a list of (detected_question_marker, text_content).
         """
         # Pattern for question headers on their own lines or start of paragraph
-        pattern = r"(?:\n\n|\A)(?:Q(?:uestion)?\s*[0-9]+|[0-9]+[\.\)])"
+        pattern = r"(?:\n\n|\A)(?:Question\s*[0-9]+|Qtn\s*[0-9]+|Qn\s*[0-9]+|Q\s*[0-9]+|[0-9]+[\.\)])"
         
         matches = list(re.finditer(pattern, page_text, re.IGNORECASE))
         if not matches:

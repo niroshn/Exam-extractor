@@ -435,67 +435,70 @@ app.post('/extract', upload.array('files', 10), async (req: Request, res: Respon
   }
 });
 
-// Sample examination datasets endpoint
-app.get('/api/samples', (req, res) => {
-  res.json({
-    samples: [
-      {
-        id: 'earthquake-resilience',
-        title: 'Geography Exam: Earthquake Resilience (Carets & Strikethrough)',
-        filename: 'student_geography_001.pdf',
-        description: 'Contains student handwriting with crossed-out text, caret insertions, and grammar quirks.',
-        questions: [
-          '6. Some strategies for building community resilience to the threat of earthquakes are more effective than others. To what extent do you agree with this statement? Explain your answer.',
-          '7. Explain the role of coastal ecosystems in mitigating tsunami risk.'
-        ],
-        simulatedScript: {
-          page1: `6.\nStrategies in building community resilience to earthquakes is important for communities living in hazard prone places. These strategies include reducing exposure through land-use planning and reducing vulnerability through monitoring and warning systems.\n\nHowever, I strongly <strikethrough>disagree</strikethrough> believe that monitoring and warning systems is more <caret>substantially</caret> effective than land-use planning because early alerts save lives.`,
-          page2: `In contrast, zoning laws take decades to implement and are often ignored by local residents in developing regions.`
-        },
-        groundTruth: {
-          q6: `Strategies in building community resilience to earthquakes is important for communities living in hazard prone places. These strategies include reducing exposure through land-use planning and reducing vulnerability through monitoring and warning systems.\n\nHowever, I strongly <strikethrough>disagree</strikethrough> believe that monitoring and warning systems is more <caret>substantially</caret> effective than land-use planning because early alerts save lives.\n\nIn contrast, zoning laws take decades to implement and are often ignored by local residents in developing regions.`,
-          q7: null
-        }
-      },
-      {
-        id: 'biology-genetics',
-        title: 'Biology Exam: Cellular Genetics (Fidelity & Spelling "nervus")',
-        filename: 'student_biology_002.pdf',
-        description: 'Demonstrates preservation of spelling errors ("nervus", "mitocondria") and multi-question responses.',
-        questions: [
-          'Q1. Describe the key characteristics of cellular respiration in mitochondria.',
-          'Q2. Explain the process of DNA replication during the S phase.',
-          'Q3. What is the role of tRNA during translation?'
-        ],
-        simulatedScript: {
-          page1: `Q1.\nCellular respiration occurs within the mitocondria. The candidate felt nervus excited when studying the Krebs cycle. Glucose is broken down into pyruvate <caret>during glycolysis</caret> in the cytoplasm.`,
-          page2: `Q3.\ntRNA carries specific amino acids to the ribosome where anticodons bind to mRNA codons.`
-        },
-        groundTruth: {
-          q1: `Cellular respiration occurs within the mitocondria. The candidate felt nervus excited when studying the Krebs cycle. Glucose is broken down into pyruvate <caret>during glycolysis</caret> in the cytoplasm.`,
-          q2: null,
-          q3: `tRNA carries specific amino acids to the ribosome where anticodons bind to mRNA codons.`
-        }
-      },
-      {
-        id: 'history-multi-page',
-        title: 'History Exam: Industrial Revolution (3-Page Answer)',
-        filename: 'student_history_003.pdf',
-        description: 'Multi-page continuation answer verifying unified answer concatenation without fragmenting across pages.',
-        questions: [
-          '1. Assess the social impacts of the Industrial Revolution in 19th-century Britain.'
-        ],
-        simulatedScript: {
-          page1: `1.\nThe Industrial Revolution transformed British society dramatically from agrarian roots to urban industrial centers.`,
-          page2: `Working conditions in textile mills was <caret>notoriously</caret> hazardous, with child labor extensively utilized.`,
-          page3: `Furthermore, urban overcrowding led to public health outbreaks such as cholera before sanitary reforms took effect.`
-        },
-        groundTruth: {
-          q1: `The Industrial Revolution transformed British society dramatically from agrarian roots to urban industrial centers.\n\nWorking conditions in textile mills was <caret>notoriously</caret> hazardous, with child labor extensively utilized.\n\nFurthermore, urban overcrowding led to public health outbreaks such as cholera before sanitary reforms took effect.`
-        }
-      }
+// Sample examination scripts are real PDFs stored on the server under sample/.
+// The client never sees or uploads the PDF bytes itself — it only picks an id,
+// and the server loads the file from disk and runs it through the real pipeline.
+const SAMPLES_DIR = path.join(process.cwd(), 'sample');
+
+interface SampleExamMeta {
+  id: string;
+  title: string;
+  filename: string;
+  description: string;
+  questions: string[];
+}
+
+const SAMPLES: SampleExamMeta[] = [
+  {
+    id: 'ocr-assessment-sample',
+    title: 'English Essay: Social Media Communication',
+    filename: 'ocr-assessment-sample.pdf',
+    description: 'Real scanned handwritten exam script with crossed-out edits, caret insertions, and a "Qn2" style question-number marker.',
+    questions: [
+      '1. Describe a memorable personal experience.',
+      '2. What are the advantages and disadvantages of teens using social media in communicating with others?'
     ]
-  });
+  }
+];
+
+// Sample metadata endpoint (id/title/questions only — no PDF bytes, no fabricated answers)
+app.get('/api/samples', (req, res) => {
+  res.json({ samples: SAMPLES });
+});
+
+// Runs a named sample PDF through the real extraction pipeline server-side.
+// The client sends only the (optionally edited) question list; the PDF itself
+// is read from disk here, never round-tripped through the browser.
+app.post('/api/samples/:id/extract', async (req: Request, res: Response): Promise<void> => {
+  const sample = SAMPLES.find((s) => s.id === req.params.id);
+  if (!sample) {
+    res.status(404).json({ detail: `Sample '${req.params.id}' not found.` });
+    return;
+  }
+
+  const filePath = path.join(SAMPLES_DIR, sample.filename);
+  if (!fs.existsSync(filePath)) {
+    res.status(500).json({ detail: `Sample file '${sample.filename}' is missing on the server.` });
+    return;
+  }
+
+  const bodyQuestions = req.body?.questions;
+  const questions: string[] = Array.isArray(bodyQuestions) && bodyQuestions.length > 0
+    ? bodyQuestions.map((q: any) => String(q).trim()).filter(Boolean)
+    : sample.questions;
+
+  try {
+    const fileBuffer = fs.readFileSync(filePath);
+    const result = await processSinglePdfScript(fileBuffer, sample.filename, questions);
+    res.json({
+      filename: result.filename,
+      responses: result.responses,
+      pages: req.headers['x-include-pages'] === 'true' ? result.pages : undefined,
+    });
+  } catch (err: any) {
+    console.error(`Sample extraction error for '${sample.id}':`, err);
+    res.status(500).json({ detail: err?.message || 'Internal extraction service error.' });
+  }
 });
 
 // Automated Test Suite Runner Endpoint

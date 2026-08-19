@@ -11,10 +11,7 @@ export const ExtractionUploader: React.FC<ExtractionUploaderProps> = ({
   onExtractionComplete,
 }) => {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [questions, setQuestions] = useState<string[]>([
-    '6. Some strategies for building community resilience to the threat of earthquakes are more effective than others. To what extent do you agree with this statement? Explain your answer.',
-    'Q7. Discuss coastal management techniques.',
-  ]);
+  const [questions, setQuestions] = useState<string[]>([]);
   const [newQuestionInput, setNewQuestionInput] = useState('');
   const [samples, setSamples] = useState<SampleExam[]>([]);
   const [selectedSample, setSelectedSample] = useState<SampleExam | null>(null);
@@ -75,59 +72,24 @@ export const ExtractionUploader: React.FC<ExtractionUploaderProps> = ({
 
     try {
       if (uploadMode === 'sample' && selectedSample) {
-        // Direct simulation via backend with strict fidelity extraction
-        const formData = new FormData();
-        // Create synthetic PDF blob from simulated handwritten exam content
-        const syntheticContent = `%PDF-1.4\n% Simulated Examination Script\n${selectedSample.title}\n`;
-        const blob = new Blob([syntheticContent], { type: 'application/pdf' });
-        const file = new File([blob], selectedSample.filename, { type: 'application/pdf' });
-        formData.append('files', file);
-        formData.append('questions', JSON.stringify(questions));
-
-        // Let's create high-fidelity sample responses matching requirements
-        const mockResponses = selectedSample.questions.map((q) => {
-          if (q.startsWith('6.')) {
-            return {
-              question: q,
-              response: selectedSample.groundTruth['q6'] || selectedSample.groundTruth['q1'] || null,
-            };
-          } else if (q.startsWith('Q1')) {
-            return {
-              question: q,
-              response: selectedSample.groundTruth['q1'] || null,
-            };
-          } else if (q.startsWith('Q3')) {
-            return {
-              question: q,
-              response: selectedSample.groundTruth['q3'] || null,
-            };
-          } else if (q.startsWith('1.')) {
-            return {
-              question: q,
-              response: selectedSample.groundTruth['q1'] || null,
-            };
-          }
-          return { question: q, response: null };
+        // The sample PDF lives on the server (sample/); the client never handles
+        // its bytes — it just tells the server which sample id and question list to run.
+        const res = await fetch(`/api/samples/${selectedSample.id}/extract`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-include-pages': 'true',
+          },
+          body: JSON.stringify({ questions }),
         });
 
-        // Simulate network processing with strict fidelity
-        await new Promise((r) => setTimeout(r, 600));
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || `Server returned status ${res.status}`);
+        }
 
-        onExtractionComplete([
-          {
-            filename: selectedSample.filename,
-            responses: mockResponses,
-            pages: [
-              { page: 1, text: selectedSample.simulatedScript['page1'] || '', confidence: 0.96 },
-              ...(selectedSample.simulatedScript['page2']
-                ? [{ page: 2, text: selectedSample.simulatedScript['page2'], confidence: 0.94 }]
-                : []),
-              ...(selectedSample.simulatedScript['page3']
-                ? [{ page: 3, text: selectedSample.simulatedScript['page3'], confidence: 0.95 }]
-                : []),
-            ],
-          },
-        ]);
+        const result = await res.json();
+        onExtractionComplete([result]);
       } else {
         // Upload custom files to POST /extract
         if (selectedFiles.length === 0) {

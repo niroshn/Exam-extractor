@@ -18,9 +18,12 @@ class QuestionMatchingService:
         self.client = genai.Client(api_key=self.api_key)
 
     def extract_question_number_from_text(self, text: str) -> Optional[str]:
-        """Looks for leading patterns like 'Q1', 'Question 1', '6.', '1)', 'Task 2'."""
+        """Looks for leading patterns like 'Q1', 'Qn1', 'Question 1', '6.', '1)', 'Task 2'."""
         patterns = [
-            r"^\s*(?:Question|Q\.?|Task|Section)?\s*([0-9]+|[A-Za-z])[\.\:\)\-]\s*",
+            # Keyword-prefixed markers, trailing punctuation optional (e.g. 'Q2', 'Qn2', 'Question 2', 'Q.2', 'Task 3')
+            r"^\s*(?:Question|Qtn|Qn|Task|Section)\.?\s*([0-9]+|[A-Za-z])\b",
+            r"^\s*Q\.?\s*([0-9]+|[A-Za-z])\b",
+            # Bare leading number requiring punctuation, to avoid matching ordinary sentences (e.g. '6.', '1)')
             r"^\s*([0-9]+)\s*[\.\:\)]",
         ]
         for pattern in patterns:

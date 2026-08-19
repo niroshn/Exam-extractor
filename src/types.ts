@@ -26,8 +26,6 @@ export interface SampleExam {
   filename: string;
   description: string;
   questions: string[];
-  simulatedScript: Record<string, string>;
-  groundTruth: Record<string, string | null>;
 }
 
 export interface TestResultItem {
