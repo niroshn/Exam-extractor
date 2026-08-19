@@ -1,0 +1,6 @@
+{
+  "name": "Handwritten Exam Script Extraction",
+  "description": "High-fidelity handwritten examination script transcription engine preserving original spelling, grammar, crossed-out text, carets, and question associations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
